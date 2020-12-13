@@ -1,0 +1,113 @@
+---
+title: "Hw4"
+author: "Natalie Vadasz"
+date: "12/2/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+nyc <- read.csv("AB_NYC_2019.csv")
+str(nyc)
+nyc$id <- NULL
+
+nyc$neighbourhood_group <- as.factor(nyc$neighbourhood_group)
+nyc$neighbourhood <- as.factor(nyc$neighbourhood)
+nyc$room_type <- as.factor(nyc$room_type)
+nyc$last_review <- as.Date(nyc$last_review)
+summary(nyc)
+
+#If there is an NA in no review, we set to 0
+nyc$reviews_per_month <- ifelse(is.na(nyc$reviews_per_month == TRUE), 0, nyc$reviews_per_month)
+summary(nyc)
+
+#average price per neighborhood_group
+library(dplyr)
+str(nyc)
+nyc %>% group_by(neighbourhood_group)%>% summarize(mean(price))
+nyc %>% group_by(neighbourhood_group)%>% summarize(median(price))
+
+#average and median price by room type
+nyc %>% group_by(room_type)%>% summarize(mean(price))
+nyc %>% group_by(room_type)%>% summarize(median(price))
+
+#average and median price by neighborhood group and room type
+nyc %>% group_by(neighbourhood_group, room_type)%>% summarize(mean(price))
+nyc %>% group_by(neighbourhood_group, room_type)%>% summarize(median(price))
+
+summary(nyc)
+
+nyc$review_category <- ifelse(nyc$number_of_reviews == 0, "Zero", ifelse(nyc$number_of_reviews <= mean(nyc$number_of_reviews), "Below Average", "Above Average"))
+summary(nyc)
+nyc$review_category <- as.factor(nyc$review_category)
+
+#looking at review category and average price
+nyc %>% group_by(review_category)%>% summarize(mean(price)) #0 review then higher price
+nyc %>% group_by(review_category)%>% summarize(mean(minimum_nights))
+nyc %>% group_by(neighbourhood_group)%>% summarize(mean(number_of_reviews))
+
+#Question 1:
+#These data visualizations demonstrate the most expensive types of rooms within each neighborhood. Here, we can see that entire homes/apts are most expensive in each neighborhood, however, Manhattan seems to be the most expensive neighborhood overall while Staten Island is the least expensive. 
+
+#We also see that Manhattan seems to be the most widely reviewed while Staten Island is the least popular reviewed. This correlates with the higher prices in Manhattan suggesting that more people visit Manhattan making it a more desireable location and increasing prices. 
+```
+
+```{r}
+#Question 2: Using lat and long to build map based visualization 
+library(ggplot2)
+library(geosphere)
+plot(nyc$longitude, nyc$latitude, pch = 16, cex = .4, main = "pseudo-map of nyc", xaxt = "n", yaxt = "n", xlab = "", ylab = "")
+
+#In this graph we see that the map of nyc is build in clusters meaning that more populated areas are close together which makes sense as nyc is a densely populated city. 
+```
+
+
+```{r}
+#Question 3: 
+library(udpipe)
+library(textrank)
+## First step: Take the english udpipe model and annotate the text
+data(nyc)
+ud_model <- udpipe_download_model(language = "english")
+ud_model <- udpipe_load_model(ud_model$file_model)
+x <- udpipe_annotate(ud_model, x = nyc$room_type)
+x <- as.data.frame(x)
+
+
+## Collocation (words following one another)
+stats <- keywords_collocation(x = x, 
+                             term = "token", group = c("doc_id", "paragraph_id", "sentence_id"),
+                             ngram_max = 4)
+## Co-occurrences: How frequent do words occur in the same sentence, in this case only nouns or adjectives
+stats <- cooccurrence(x = subset(x, upos %in% c("NOUN", "ADJ")), 
+                     term = "lemma", group = c("doc_id", "paragraph_id", "sentence_id"))
+## Co-occurrences: How frequent do words follow one another
+stats <- cooccurrence(x = x$lemma, 
+                     relevant = x$upos %in% c("NOUN", "ADJ"))
+## Co-occurrences: How frequent do words follow one another even if we would skip 2 words in between
+stats <- cooccurrence(x = x$lemma, 
+                     relevant = x$upos %in% c("NOUN", "ADJ"), skipgram = 2)
+
+library(igraph)
+library(ggraph)
+library(ggplot2)
+wordnetwork <- head(stats, 30)
+wordnetwork <- graph_from_data_frame(wordnetwork)
+ggraph(wordnetwork, layout = "fr") +
+  geom_edge_link(aes(width = cooc, edge_alpha = cooc), edge_colour = "pink") +
+  geom_node_text(aes(label = name), col = "darkgreen", size = 4) +
+  theme_graph(base_family = "Arial Narrow") +
+  theme(legend.position = "none") +
+  labs(title = "Cooccurrences within 3 words distance", subtitle = "Nouns & Adjective")
+
+stats <- textrank_keywords(x$lemma, 
+                          relevant = x$upos %in% c("NOUN", "ADJ"), 
+                          ngram_max = 8, sep = " ")
+stats <- subset(stats$keywords, ngram > 1 & freq >= 5)
+library(wordcloud)
+wordcloud(words = stats$keyword, freq = stats$freq)
+
+#in this question we see that there is a strong preference in the room descriptions to include the keyword "entire". Renting the entirety allows residence more privacy and freedom which probably makes it more appealing than a shared space
